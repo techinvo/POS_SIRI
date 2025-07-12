@@ -24,7 +24,7 @@
         <div class="flex mb-4 bg-white rounded-lg shadow overflow-hidden">
             <button onclick="showTab('sale')" id="sale-tab" class="tab-btn flex-1 py-3 px-4 bg-blue-500 text-white">ขายสินค้า</button>
             <button onclick="showTab('products')" id="products-tab" class="tab-btn flex-1 py-3 px-4 bg-gray-200">จัดการสินค้า</button>
-            <!-- <button onclick="showTab('scanner')" id="scanner-tab" class="tab-btn flex-1 py-3 px-4 bg-gray-200">สแกนบาร์โค้ด</button> -->
+            <button onclick="showTab('scanner')" id="scanner-tab" class="hidden tab-btn flex-1 py-3 px-4 bg-gray-200">สแกนบาร์โค้ด</button>
             <button onclick="showTab('reports')" id="reports-tab" class="tab-btn flex-1 py-3 px-4 bg-gray-200">รายงาน</button>
             <button onclick="showTab('settings')" id="settings-tab" class="tab-btn flex-1 py-3 px-4 bg-gray-200">ตั้งค่า</button>
         </div>
@@ -700,10 +700,10 @@ function updateStock(sheet, params) {
 
         // Tab Management
         function showTab(tabName) {
-            // Stop all scanners when switching tabs
-            if (saleQrCode) stopSaleScanner();
-            if (productQrCode) stopProductScanner();
-            if (html5QrCode) stopScanner();
+            // Stop all scanners when switching tabs safely
+            stopSaleScanner();
+            stopProductScanner();
+            stopScanner();
             
             // Hide all scanner interfaces
             const saleScanner = document.getElementById('sale-scanner');
@@ -851,10 +851,9 @@ function updateStock(sheet, params) {
             document.getElementById('add-product-form').classList.add('hidden');
             clearProductForm();
             // Stop product scanner if running
-            if (productQrCode) {
-                stopProductScanner();
-                toggleProductScanner();
-            }
+            stopProductScanner();
+            const productScanner = document.getElementById('product-scanner');
+            if (productScanner) productScanner.classList.add('hidden');
         }
 
         function showEditProductForm(product) {
@@ -1000,9 +999,7 @@ function updateStock(sheet, params) {
                 scanner.classList.remove('hidden');
             } else {
                 scanner.classList.add('hidden');
-                if (saleQrCode) {
-                    stopSaleScanner();
-                }
+                stopSaleScanner();
             }
         }
 
@@ -1030,11 +1027,21 @@ function updateStock(sheet, params) {
         }
 
         function stopSaleScanner() {
-            if (saleQrCode) {
+            if (saleQrCode && saleQrCode.getState() === Html5QrcodeScannerState.SCANNING) {
                 saleQrCode.stop().then(() => {
                     document.getElementById('start-sale-scanner').disabled = false;
                     document.getElementById('stop-sale-scanner').disabled = true;
+                    saleQrCode = null;
+                }).catch(err => {
+                    console.log('Error stopping sale scanner:', err);
+                    document.getElementById('start-sale-scanner').disabled = false;
+                    document.getElementById('stop-sale-scanner').disabled = true;
+                    saleQrCode = null;
                 });
+            } else {
+                document.getElementById('start-sale-scanner').disabled = false;
+                document.getElementById('stop-sale-scanner').disabled = true;
+                saleQrCode = null;
             }
         }
 
@@ -1048,7 +1055,7 @@ function updateStock(sheet, params) {
             if (product) {
                 addToCart(product);
                 stopSaleScanner();
-                toggleSaleScanner();
+                document.getElementById('sale-scanner').classList.add('hidden');
             }
         }
 
@@ -1061,9 +1068,7 @@ function updateStock(sheet, params) {
                 scanner.classList.remove('hidden');
             } else {
                 scanner.classList.add('hidden');
-                if (productQrCode) {
-                    stopProductScanner();
-                }
+                stopProductScanner();
             }
         }
 
@@ -1091,11 +1096,21 @@ function updateStock(sheet, params) {
         }
 
         function stopProductScanner() {
-            if (productQrCode) {
+            if (productQrCode && productQrCode.getState() === Html5QrcodeScannerState.SCANNING) {
                 productQrCode.stop().then(() => {
                     document.getElementById('start-product-scanner').disabled = false;
                     document.getElementById('stop-product-scanner').disabled = true;
+                    productQrCode = null;
+                }).catch(err => {
+                    console.log('Error stopping product scanner:', err);
+                    document.getElementById('start-product-scanner').disabled = false;
+                    document.getElementById('stop-product-scanner').disabled = true;
+                    productQrCode = null;
                 });
+            } else {
+                document.getElementById('start-product-scanner').disabled = false;
+                document.getElementById('stop-product-scanner').disabled = true;
+                productQrCode = null;
             }
         }
 
@@ -1116,7 +1131,7 @@ function updateStock(sheet, params) {
             }
             
             stopProductScanner();
-            toggleProductScanner();
+            document.getElementById('product-scanner').classList.add('hidden');
         }
         // Main Scanner Functions (Scanner Tab)
         function startScanner() {
@@ -1143,11 +1158,21 @@ function updateStock(sheet, params) {
         }
 
         function stopScanner() {
-            if (html5QrCode) {
+            if (html5QrCode && html5QrCode.getState() === Html5QrcodeScannerState.SCANNING) {
                 html5QrCode.stop().then(() => {
                     document.getElementById('start-scanner').disabled = false;
                     document.getElementById('stop-scanner').disabled = true;
+                    html5QrCode = null;
+                }).catch(err => {
+                    console.log('Error stopping main scanner:', err);
+                    document.getElementById('start-scanner').disabled = false;
+                    document.getElementById('stop-scanner').disabled = true;
+                    html5QrCode = null;
                 });
+            } else {
+                document.getElementById('start-scanner').disabled = false;
+                document.getElementById('stop-scanner').disabled = true;
+                html5QrCode = null;
             }
         }
 

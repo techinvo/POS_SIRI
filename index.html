@@ -129,19 +129,31 @@ function readData(sheet) {
 
 function createProduct(sheet, params) {
   const lastRow = sheet.getLastRow();
-  const newId = lastRow > 0 ? Math.max(...sheet.getRange(2, 1, lastRow - 1, 1).getValues().flat()) + 1 : 1;
+  let newId = 1;
+  
+  if (lastRow > 1) {
+    // Get all existing IDs and find the maximum
+    const existingIds = sheet.getRange(2, 1, lastRow - 1, 1).getValues().flat().filter(id => id && !isNaN(id));
+    newId = existingIds.length > 0 ? Math.max(...existingIds) + 1 : 1;
+  }
   
   sheet.appendRow([
     newId,
-    params.name,
-    params.barcode,
-    parseFloat(params.price),
-    parseInt(params.stock)
+    params.name || '',
+    params.barcode || '',
+    parseFloat(params.price) || 0,
+    parseInt(params.stock) || 0
   ]);
   
   return ContentService.createTextOutput(JSON.stringify({
     success: true,
-    data: { id: newId, name: params.name, barcode: params.barcode, price: parseFloat(params.price), stock: parseInt(params.stock) }
+    data: { 
+      id: newId, 
+      name: params.name || '', 
+      barcode: params.barcode || '', 
+      price: parseFloat(params.price) || 0, 
+      stock: parseInt(params.stock) || 0 
+    }
   })).setMimeType(ContentService.MimeType.JSON);
 }
 
@@ -245,37 +257,13 @@ function updateStock(sheet, params) {
                 <!-- Add Product Form -->
                 <div id="add-product-form" class="hidden mb-4 p-4 bg-gray-50 rounded">
                     <h4 class="font-bold mb-2">เพิ่มสินค้าใหม่</h4>
-                    
-                    <!-- Barcode Scanner for Add Product -->
-                    <div class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded">
-                        <h5 class="font-bold mb-2">สแกนบาร์โค้ดสินค้าใหม่</h5>
-                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                            <div>
-                                <div id="add-product-scanner" class="w-full max-w-sm mx-auto">
-                                    <div id="add-product-qr-reader" class="w-full"></div>
-                                </div>
-                                <div class="mt-2 text-center">
-                                    <button onclick="startAddProductScanner()" id="start-add-scanner" class="bg-green-500 text-white px-3 py-1 rounded text-sm mr-2">
-                                        เริ่มสแกน
-                                    </button>
-                                    <button onclick="stopAddProductScanner()" id="stop-add-scanner" class="bg-red-500 text-white px-3 py-1 rounded text-sm" disabled>
-                                        หยุดสแกน
-                                    </button>
-                                </div>
-                            </div>
-                            <div>
-                                <div class="text-sm font-bold mb-1">ผลการสแกน:</div>
-                                <div id="add-product-scan-result" class="p-2 bg-white border rounded min-h-16 text-sm"></div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Product Form Fields -->
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <input type="text" id="new-product-name" placeholder="ชื่อสินค้า" class="p-2 border rounded">
                         <div class="flex">
-                            <input type="text" id="new-product-barcode" placeholder="บาร์โค้ด" class="flex-1 p-2 border rounded-l">
-                            <button onclick="clearBarcodeField()" class="px-3 bg-gray-200 border-t border-b border-r rounded-r text-sm">ล้าง</button>
+                            <input type="text" id="new-product-barcode" placeholder="บาร์โค้ด" class="p-2 border rounded flex-1">
+                            <button onclick="scanForNewProduct()" class="ml-2 bg-purple-500 text-white px-3 py-2 rounded">
+                                📷 สแกน
+                            </button>
                         </div>
                         <input type="number" id="new-product-price" placeholder="ราคา" class="p-2 border rounded">
                         <input type="number" id="new-product-stock" placeholder="จำนวนสต๊อก" class="p-2 border rounded">
@@ -326,6 +314,23 @@ function updateStock(sheet, params) {
         <div id="scanner-tab-content" class="tab-content hidden">
             <div class="bg-white p-4 rounded-lg shadow">
                 <h3 class="text-lg font-bold mb-3">สแกนบาร์โค้ด</h3>
+                
+                <!-- Scanner Mode Selection -->
+                <div class="mb-4">
+                    <div class="flex space-x-4">
+                        <label class="flex items-center">
+                            <input type="radio" name="scanner-mode" value="add-to-cart" checked 
+                                   onchange="changeScannerMode(this.value)" class="mr-2">
+                            <span>เพิ่มลงตะกร้า</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input type="radio" name="scanner-mode" value="add-product" 
+                                   onchange="changeScannerMode(this.value)" class="mr-2">
+                            <span>เพิ่มสินค้าใหม่</span>
+                        </label>
+                    </div>
+                </div>
+
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
                     <div>
                         <div id="scanner-container" class="w-full max-w-md mx-auto">
@@ -343,9 +348,36 @@ function updateStock(sheet, params) {
                     <div>
                         <h4 class="font-bold mb-2">ผลการสแกน</h4>
                         <div id="scan-result" class="p-3 bg-gray-50 rounded min-h-20"></div>
-                        <button onclick="addScannedToCart()" id="add-to-cart-btn" class="mt-3 bg-blue-500 text-white px-4 py-2 rounded w-full" disabled>
-                            เพิ่มลงตะกร้า
-                        </button>
+                        
+                        <!-- Buttons for different actions -->
+                        <div id="scanner-actions" class="mt-3 space-y-2">
+                            <button onclick="addScannedToCart()" id="add-to-cart-btn" 
+                                    class="bg-blue-500 text-white px-4 py-2 rounded w-full" disabled>
+                                เพิ่มลงตะกร้า
+                            </button>
+                            <button onclick="createProductFromScan()" id="create-product-btn" 
+                                    class="bg-green-500 text-white px-4 py-2 rounded w-full hidden" disabled>
+                                สร้างสินค้าใหม่
+                            </button>
+                        </div>
+
+                        <!-- Quick Add Product Form (for scanner) -->
+                        <div id="quick-add-form" class="hidden mt-4 p-3 bg-blue-50 rounded">
+                            <h5 class="font-bold mb-2">เพิ่มสินค้าใหม่</h5>
+                            <div class="space-y-2">
+                                <input type="text" id="quick-product-name" placeholder="ชื่อสินค้า" class="w-full p-2 border rounded">
+                                <input type="number" id="quick-product-price" placeholder="ราคา" class="w-full p-2 border rounded">
+                                <input type="number" id="quick-product-stock" placeholder="จำนวนสต๊อก" class="w-full p-2 border rounded">
+                                <div class="flex space-x-2">
+                                    <button onclick="saveQuickProduct()" class="bg-green-500 text-white px-3 py-1 rounded flex-1">
+                                        บันทึก
+                                    </button>
+                                    <button onclick="cancelQuickAdd()" class="bg-gray-500 text-white px-3 py-1 rounded flex-1">
+                                        ยกเลิก
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -423,10 +455,10 @@ function updateStock(sheet, params) {
         let products = [];
         let cart = [];
         let html5QrCode = null;
-        let html5QrCodeAddProduct = null;
         let scannedBarcode = '';
         let gasUrl = '';
         let isConnected = false;
+        let scannerMode = 'add-to-cart'; // 'add-to-cart' or 'add-product'
 
         // Google Apps Script Integration
         function showLoading() {
@@ -775,15 +807,11 @@ function updateStock(sheet, params) {
         function showAddProductForm() {
             document.getElementById('add-product-form').classList.remove('hidden');
             hideEditProductForm();
-            // Clear any previous scan results
-            document.getElementById('add-product-scan-result').innerHTML = '';
         }
 
         function hideAddProductForm() {
             document.getElementById('add-product-form').classList.add('hidden');
             clearProductForm();
-            // Stop scanner if running
-            stopAddProductScanner();
         }
 
         function showEditProductForm(product) {
@@ -807,85 +835,9 @@ function updateStock(sheet, params) {
             document.getElementById('new-product-stock').value = '';
         }
 
-        function clearBarcodeField() {
-            document.getElementById('new-product-barcode').value = '';
-            document.getElementById('add-product-scan-result').innerHTML = '';
-        }
-
-        // Add Product Scanner Functions
-        function startAddProductScanner() {
-            html5QrCodeAddProduct = new Html5Qrcode("add-product-qr-reader");
-            
-            html5QrCodeAddProduct.start(
-                { facingMode: "environment" },
-                {
-                    fps: 10,
-                    qrbox: { width: 200, height: 200 }
-                },
-                (decodedText, decodedResult) => {
-                    onAddProductScanSuccess(decodedText);
-                },
-                (errorMessage) => {
-                    // Handle scan errors silently
-                }
-            ).then(() => {
-                document.getElementById('start-add-scanner').disabled = true;
-                document.getElementById('stop-add-scanner').disabled = false;
-            }).catch(err => {
-                alert('ไม่สามารถเปิดกล้องได้: ' + err);
-            });
-        }
-
-        function stopAddProductScanner() {
-            if (html5QrCodeAddProduct) {
-                html5QrCodeAddProduct.stop().then(() => {
-                    document.getElementById('start-add-scanner').disabled = false;
-                    document.getElementById('stop-add-scanner').disabled = true;
-                    html5QrCodeAddProduct = null;
-                }).catch(err => {
-                    console.log('Error stopping scanner:', err);
-                });
-            }
-        }
-
-        function onAddProductScanSuccess(barcode) {
-            const resultDiv = document.getElementById('add-product-scan-result');
-            const barcodeInput = document.getElementById('new-product-barcode');
-            
-            // Check if barcode already exists
-            const existingProduct = products.find(p => p.barcode === barcode);
-            
-            if (existingProduct) {
-                resultDiv.innerHTML = `
-                    <div class="p-2 bg-red-100 border border-red-400 rounded">
-                        <div class="font-bold text-red-700">⚠️ บาร์โค้ดซ้ำ!</div>
-                        <div class="text-sm">สินค้า: ${existingProduct.name}</div>
-                        <div class="text-sm text-gray-600">บาร์โค้ด: ${barcode}</div>
-                    </div>
-                `;
-                // Don't fill the barcode field for duplicates
-            } else {
-                resultDiv.innerHTML = `
-                    <div class="p-2 bg-green-100 border border-green-400 rounded">
-                        <div class="font-bold text-green-700">✅ สแกนสำเร็จ!</div>
-                        <div class="text-sm text-gray-600">บาร์โค้ด: ${barcode}</div>
-                        <div class="text-xs text-gray-500 mt-1">บาร์โค้ดได้รับการกรอกอัตโนมัติแล้ว</div>
-                    </div>
-                `;
-                // Fill the barcode field
-                barcodeInput.value = barcode;
-                
-                // Focus on the product name field for convenience
-                document.getElementById('new-product-name').focus();
-            }
-            
-            // Stop the scanner after successful scan
-            stopAddProductScanner();
-        }
-
         async function addProduct() {
-            const name = document.getElementById('new-product-name').value.trim();
-            const barcode = document.getElementById('new-product-barcode').value.trim();
+            const name = document.getElementById('new-product-name').value;
+            const barcode = document.getElementById('new-product-barcode').value;
             const price = parseFloat(document.getElementById('new-product-price').value);
             const stock = parseInt(document.getElementById('new-product-stock').value);
             
@@ -894,19 +846,9 @@ function updateStock(sheet, params) {
                 return;
             }
             
-            if (price <= 0) {
-                alert('ราคาต้องมากกว่า 0');
-                return;
-            }
-            
-            if (stock < 0) {
-                alert('จำนวนสต๊อกต้องไม่ติดลบ');
-                return;
-            }
-            
             // Check for duplicate barcode
             if (products.find(p => p.barcode === barcode)) {
-                alert('บาร์โค้ดนี้มีอยู่แล้ว กรุณาใช้บาร์โค้ดอื่น');
+                alert('บาร์โค้ดนี้มีอยู่แล้ว');
                 return;
             }
             
@@ -919,14 +861,6 @@ function updateStock(sheet, params) {
                 await loadData();
                 hideAddProductForm();
                 alert('เพิ่มสินค้าสำเร็จ');
-                
-                // Show the newly added product in the results
-                const newProduct = products.find(p => p.barcode === barcode);
-                if (newProduct) {
-                    // Scroll to the new product in the table
-                    refreshProductsTable();
-                    // You could add highlighting here if needed
-                }
             }
         }
 
@@ -1014,6 +948,25 @@ function updateStock(sheet, params) {
         }
 
         // Scanner Functions
+        function changeScannerMode(mode) {
+            scannerMode = mode;
+            document.getElementById('add-to-cart-btn').classList.toggle('hidden', mode === 'add-product');
+            document.getElementById('create-product-btn').classList.toggle('hidden', mode === 'add-to-cart');
+            
+            // Reset scan result
+            document.getElementById('scan-result').innerHTML = '';
+            document.getElementById('add-to-cart-btn').disabled = true;
+            document.getElementById('create-product-btn').disabled = true;
+            document.getElementById('quick-add-form').classList.add('hidden');
+        }
+
+        function scanForNewProduct() {
+            // Switch to scanner tab and set mode to add-product
+            document.querySelector('input[name="scanner-mode"][value="add-product"]').checked = true;
+            changeScannerMode('add-product');
+            showTab('scanner');
+        }
+
         function startScanner() {
             html5QrCode = new Html5Qrcode("qr-reader");
             
@@ -1042,9 +995,6 @@ function updateStock(sheet, params) {
                 html5QrCode.stop().then(() => {
                     document.getElementById('start-scanner').disabled = false;
                     document.getElementById('stop-scanner').disabled = true;
-                    html5QrCode = null;
-                }).catch(err => {
-                    console.log('Error stopping scanner:', err);
                 });
             }
         }
@@ -1054,9 +1004,11 @@ function updateStock(sheet, params) {
             const product = products.find(p => p.barcode === barcode);
             
             const resultDiv = document.getElementById('scan-result');
-            const addBtn = document.getElementById('add-to-cart-btn');
+            const addToCartBtn = document.getElementById('add-to-cart-btn');
+            const createProductBtn = document.getElementById('create-product-btn');
             
             if (product) {
+                // Product exists
                 resultDiv.innerHTML = `
                     <div class="p-3 bg-green-100 border border-green-400 rounded">
                         <div class="font-bold">${product.name}</div>
@@ -1065,15 +1017,37 @@ function updateStock(sheet, params) {
                         <div class="text-sm text-gray-600">บาร์โค้ด: ${barcode}</div>
                     </div>
                 `;
-                addBtn.disabled = false;
+                
+                if (scannerMode === 'add-to-cart') {
+                    addToCartBtn.disabled = false;
+                } else {
+                    resultDiv.innerHTML += `
+                        <div class="mt-2 p-2 bg-yellow-100 border border-yellow-400 rounded text-sm">
+                            สินค้านี้มีอยู่แล้วในระบบ
+                        </div>
+                    `;
+                    createProductBtn.disabled = true;
+                }
             } else {
+                // Product doesn't exist
                 resultDiv.innerHTML = `
-                    <div class="p-3 bg-red-100 border border-red-400 rounded">
-                        <div class="font-bold">ไม่พบสินค้า</div>
+                    <div class="p-3 bg-blue-100 border border-blue-400 rounded">
+                        <div class="font-bold">บาร์โค้ดใหม่</div>
                         <div class="text-sm text-gray-600">บาร์โค้ด: ${barcode}</div>
+                        <div class="text-sm text-blue-600 mt-1">พร้อมเพิ่มเป็นสินค้าใหม่</div>
                     </div>
                 `;
-                addBtn.disabled = true;
+                
+                if (scannerMode === 'add-to-cart') {
+                    addToCartBtn.disabled = true;
+                } else {
+                    createProductBtn.disabled = false;
+                    // Auto-fill barcode in new product form if it's open
+                    const barcodeInput = document.getElementById('new-product-barcode');
+                    if (barcodeInput) {
+                        barcodeInput.value = barcode;
+                    }
+                }
             }
         }
 
@@ -1085,6 +1059,66 @@ function updateStock(sheet, params) {
                 document.getElementById('add-to-cart-btn').disabled = true;
                 showTab('sale');
             }
+        }
+
+        function createProductFromScan() {
+            if (!scannedBarcode) return;
+            
+            // Show quick add form
+            document.getElementById('quick-add-form').classList.remove('hidden');
+            document.getElementById('create-product-btn').disabled = true;
+        }
+
+        async function saveQuickProduct() {
+            const name = document.getElementById('quick-product-name').value;
+            const price = parseFloat(document.getElementById('quick-product-price').value);
+            const stock = parseInt(document.getElementById('quick-product-stock').value);
+            
+            if (!name || !price || !stock || !scannedBarcode) {
+                alert('กรุณากรอกข้อมูลให้ครบ');
+                return;
+            }
+            
+            // Check for duplicate barcode (shouldn't happen but just in case)
+            if (products.find(p => p.barcode === scannedBarcode)) {
+                alert('บาร์โค้ดนี้มีอยู่แล้ว');
+                return;
+            }
+            
+            const productData = { 
+                name, 
+                barcode: scannedBarcode, 
+                price, 
+                stock 
+            };
+            
+            // Save to Google Sheets first
+            const success = await saveProductToSheets(productData, 'create');
+            if (success) {
+                // Reload data to get the new ID from Google Sheets
+                await loadData();
+                
+                // Clear form and reset scanner
+                document.getElementById('quick-product-name').value = '';
+                document.getElementById('quick-product-price').value = '';
+                document.getElementById('quick-product-stock').value = '';
+                document.getElementById('quick-add-form').classList.add('hidden');
+                document.getElementById('scan-result').innerHTML = '';
+                document.getElementById('create-product-btn').disabled = true;
+                
+                alert('เพิ่มสินค้าสำเร็จ');
+                
+                // Switch to products tab to show the new product
+                showTab('products');
+            }
+        }
+
+        function cancelQuickAdd() {
+            document.getElementById('quick-product-name').value = '';
+            document.getElementById('quick-product-price').value = '';
+            document.getElementById('quick-product-stock').value = '';
+            document.getElementById('quick-add-form').classList.add('hidden');
+            document.getElementById('create-product-btn').disabled = false;
         }
 
         // Reports

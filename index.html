@@ -24,7 +24,7 @@
         <div class="flex mb-4 bg-white rounded-lg shadow overflow-hidden">
             <button onclick="showTab('sale')" id="sale-tab" class="tab-btn flex-1 py-3 px-4 bg-blue-500 text-white">ขายสินค้า</button>
             <button onclick="showTab('products')" id="products-tab" class="tab-btn flex-1 py-3 px-4 bg-gray-200">จัดการสินค้า</button>
-            <button onclick="showTab('scanner')" id="scanner-tab" class="tab-btn flex-1 py-3 px-4 bg-gray-200">สแกนบาร์โค้ด</button>
+            <!-- <button onclick="showTab('scanner')" id="scanner-tab" class="tab-btn flex-1 py-3 px-4 bg-gray-200">สแกนบาร์โค้ด</button> -->
             <button onclick="showTab('reports')" id="reports-tab" class="tab-btn flex-1 py-3 px-4 bg-gray-200">รายงาน</button>
             <button onclick="showTab('settings')" id="settings-tab" class="tab-btn flex-1 py-3 px-4 bg-gray-200">ตั้งค่า</button>
         </div>
@@ -225,8 +225,26 @@ function updateStock(sheet, params) {
                 <!-- Product Search -->
                 <div class="bg-white p-4 rounded-lg shadow">
                     <h3 class="text-lg font-bold mb-3">ค้นหาสินค้า</h3>
-                    <input type="text" id="search-product" placeholder="ค้นหาด้วยชื่อสินค้า หรือ บาร์โค้ด" 
-                           class="w-full p-3 border rounded-lg text-lg" onkeyup="searchProducts(this.value)">
+                    <div class="relative">
+                        <input type="text" id="search-product" placeholder="ค้นหาด้วยชื่อสินค้า หรือ บาร์โค้ด" 
+                               class="w-full p-3 border rounded-lg text-lg pr-12" onkeyup="searchProducts(this.value)">
+                        <button onclick="toggleSaleScanner()" id="sale-scanner-btn" 
+                                class="absolute right-2 top-2 p-2 bg-blue-500 text-white rounded hover:bg-blue-600">
+                            📷
+                        </button>
+                    </div>
+                    
+                    <!-- Quick Scanner for Sale -->
+                    <div id="sale-scanner" class="hidden mt-3 p-3 bg-gray-50 rounded">
+                        <div id="sale-qr-reader" class="w-full max-w-xs mx-auto"></div>
+                        <div class="text-center mt-2">
+                            <button onclick="startSaleScanner()" id="start-sale-scanner" 
+                                    class="bg-green-500 text-white px-3 py-1 rounded text-sm mr-2">เริ่มสแกน</button>
+                            <button onclick="stopSaleScanner()" id="stop-sale-scanner" 
+                                    class="bg-red-500 text-white px-3 py-1 rounded text-sm" disabled>หยุด</button>
+                        </div>
+                    </div>
+                    
                     <div id="search-results" class="mt-3 max-h-60 overflow-y-auto"></div>
                 </div>
 
@@ -260,10 +278,29 @@ function updateStock(sheet, params) {
                     <h4 class="font-bold mb-2">เพิ่มสินค้าใหม่</h4>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <input type="text" id="new-product-name" placeholder="ชื่อสินค้า" class="p-2 border rounded">
-                        <input type="text" id="new-product-barcode" placeholder="บาร์โค้ด" class="p-2 border rounded">
+                        <div class="relative">
+                            <input type="text" id="new-product-barcode" placeholder="บาร์โค้ด" class="p-2 border rounded w-full pr-12">
+                            <button onclick="toggleProductScanner()" id="product-scanner-btn" 
+                                    class="absolute right-2 top-2 p-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm">
+                                📷
+                            </button>
+                        </div>
                         <input type="number" id="new-product-price" placeholder="ราคา" class="p-2 border rounded">
                         <input type="number" id="new-product-stock" placeholder="จำนวนสต๊อก" class="p-2 border rounded">
                     </div>
+                    
+                    <!-- Quick Scanner for Add Product -->
+                    <div id="product-scanner" class="hidden mt-3 p-3 bg-blue-50 rounded">
+                        <div id="product-qr-reader" class="w-full max-w-xs mx-auto"></div>
+                        <div class="text-center mt-2">
+                            <button onclick="startProductScanner()" id="start-product-scanner" 
+                                    class="bg-green-500 text-white px-3 py-1 rounded text-sm mr-2">เริ่มสแกน</button>
+                            <button onclick="stopProductScanner()" id="stop-product-scanner" 
+                                    class="bg-red-500 text-white px-3 py-1 rounded text-sm" disabled>หยุด</button>
+                        </div>
+                        <div id="product-scan-result" class="mt-2 text-center text-sm"></div>
+                    </div>
+                    
                     <div class="mt-3">
                         <button onclick="addProduct()" class="bg-green-500 text-white px-4 py-2 rounded mr-2">บันทึก</button>
                         <button onclick="hideAddProductForm()" class="bg-gray-500 text-white px-4 py-2 rounded">ยกเลิก</button>
@@ -428,6 +465,8 @@ function updateStock(sheet, params) {
         let products = [];
         let cart = [];
         let html5QrCode = null;
+        let saleQrCode = null;
+        let productQrCode = null;
         let scannedBarcode = '';
         let gasUrl = '';
         let isConnected = false;
@@ -661,6 +700,17 @@ function updateStock(sheet, params) {
 
         // Tab Management
         function showTab(tabName) {
+            // Stop all scanners when switching tabs
+            if (saleQrCode) stopSaleScanner();
+            if (productQrCode) stopProductScanner();
+            if (html5QrCode) stopScanner();
+            
+            // Hide all scanner interfaces
+            const saleScanner = document.getElementById('sale-scanner');
+            const productScanner = document.getElementById('product-scanner');
+            if (saleScanner) saleScanner.classList.add('hidden');
+            if (productScanner) productScanner.classList.add('hidden');
+            
             document.querySelectorAll('.tab-content').forEach(content => {
                 content.classList.add('hidden');
             });
@@ -800,6 +850,11 @@ function updateStock(sheet, params) {
         function hideAddProductForm() {
             document.getElementById('add-product-form').classList.add('hidden');
             clearProductForm();
+            // Stop product scanner if running
+            if (productQrCode) {
+                stopProductScanner();
+                toggleProductScanner();
+            }
         }
 
         function showEditProductForm(product) {
@@ -821,6 +876,7 @@ function updateStock(sheet, params) {
             document.getElementById('new-product-barcode').value = '';
             document.getElementById('new-product-price').value = '';
             document.getElementById('new-product-stock').value = '';
+            document.getElementById('product-scan-result').innerHTML = '';
         }
 
         async function addProduct() {
@@ -935,7 +991,134 @@ function updateStock(sheet, params) {
             });
         }
 
-        // Scanner Functions
+        // Sale Scanner Functions
+        function toggleSaleScanner() {
+            const scanner = document.getElementById('sale-scanner');
+            const isHidden = scanner.classList.contains('hidden');
+            
+            if (isHidden) {
+                scanner.classList.remove('hidden');
+            } else {
+                scanner.classList.add('hidden');
+                if (saleQrCode) {
+                    stopSaleScanner();
+                }
+            }
+        }
+
+        function startSaleScanner() {
+            saleQrCode = new Html5Qrcode("sale-qr-reader");
+            
+            saleQrCode.start(
+                { facingMode: "environment" },
+                {
+                    fps: 10,
+                    qrbox: { width: 200, height: 200 }
+                },
+                (decodedText) => {
+                    onSaleScanSuccess(decodedText);
+                },
+                (errorMessage) => {
+                    // Handle scan errors silently
+                }
+            ).then(() => {
+                document.getElementById('start-sale-scanner').disabled = true;
+                document.getElementById('stop-sale-scanner').disabled = false;
+            }).catch(err => {
+                alert('ไม่สามารถเปิดกล้องได้: ' + err);
+            });
+        }
+
+        function stopSaleScanner() {
+            if (saleQrCode) {
+                saleQrCode.stop().then(() => {
+                    document.getElementById('start-sale-scanner').disabled = false;
+                    document.getElementById('stop-sale-scanner').disabled = true;
+                });
+            }
+        }
+
+        function onSaleScanSuccess(barcode) {
+            const trimmedBarcode = barcode.trim();
+            document.getElementById('search-product').value = trimmedBarcode;
+            searchProducts(trimmedBarcode);
+            
+            // Auto add to cart if product found
+            const product = products.find(p => String(p.barcode).trim() === trimmedBarcode);
+            if (product) {
+                addToCart(product);
+                stopSaleScanner();
+                toggleSaleScanner();
+            }
+        }
+
+        // Product Scanner Functions
+        function toggleProductScanner() {
+            const scanner = document.getElementById('product-scanner');
+            const isHidden = scanner.classList.contains('hidden');
+            
+            if (isHidden) {
+                scanner.classList.remove('hidden');
+            } else {
+                scanner.classList.add('hidden');
+                if (productQrCode) {
+                    stopProductScanner();
+                }
+            }
+        }
+
+        function startProductScanner() {
+            productQrCode = new Html5Qrcode("product-qr-reader");
+            
+            productQrCode.start(
+                { facingMode: "environment" },
+                {
+                    fps: 10,
+                    qrbox: { width: 200, height: 200 }
+                },
+                (decodedText) => {
+                    onProductScanSuccess(decodedText);
+                },
+                (errorMessage) => {
+                    // Handle scan errors silently
+                }
+            ).then(() => {
+                document.getElementById('start-product-scanner').disabled = true;
+                document.getElementById('stop-product-scanner').disabled = false;
+            }).catch(err => {
+                alert('ไม่สามารถเปิดกล้องได้: ' + err);
+            });
+        }
+
+        function stopProductScanner() {
+            if (productQrCode) {
+                productQrCode.stop().then(() => {
+                    document.getElementById('start-product-scanner').disabled = false;
+                    document.getElementById('stop-product-scanner').disabled = true;
+                });
+            }
+        }
+
+        function onProductScanSuccess(barcode) {
+            const trimmedBarcode = barcode.trim();
+            const resultDiv = document.getElementById('product-scan-result');
+            
+            // Check if barcode already exists
+            const existingProduct = products.find(p => String(p.barcode).trim() === trimmedBarcode);
+            
+            if (existingProduct) {
+                resultDiv.innerHTML = `<span class="text-red-600">บาร์โค้ดนี้มีอยู่แล้ว: ${existingProduct.name}</span>`;
+                // Don't fill the barcode field
+            } else {
+                document.getElementById('new-product-barcode').value = trimmedBarcode;
+                resultDiv.innerHTML = `<span class="text-green-600">บาร์โค้ด: ${trimmedBarcode}</span>`;
+                document.getElementById('new-product-name').focus();
+            }
+            
+            stopProductScanner();
+            toggleProductScanner();
+        }
+        // Main Scanner Functions (Scanner Tab)
         function startScanner() {
             html5QrCode = new Html5Qrcode("qr-reader");
             
